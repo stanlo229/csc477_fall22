@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rospy
 import tf
-from std_msgs.msg import String, Header
+from std_msgs.msg import String, Header, Float32
 from geometry_msgs.msg import Twist
 from math import sqrt, cos, sin, pi, atan2
 import numpy
@@ -38,13 +38,19 @@ class WallFollowerHusky:
 
         # todo: set up the command publisher to publish at topic '/husky_1/cmd_vel'
         # using geometry_msgs.Twist messages
-        # self.cmd_pub = ??
+        self.cmd_pub = rospy.Publisher('/husky_1/cmd_vel', Twist, queue_size=10)
+        rospy.init_node('talker', anonymous=True)
+        msg = Twist()
+        msg.linear = 0 # ???
+        msg.angular = 0 # ???
 
         # todo: set up the laser scan subscriber
         # this will set up a callback function that gets executed
         # upon each spinOnce() call, as long as a laser scan
         # message has been published in the meantime by another node
-        # self.laser_sub = ???
+        rospy.init_node('listener', anonymous=True)
+        self.laser_sub = rospy.Subscriber('/husky_1/cmd_vel', Twist, self.laser_scan_callback)
+        rospy.spin()
         
         
     def laser_scan_callback(self, msg):
@@ -57,9 +63,14 @@ class WallFollowerHusky:
         # (1) using only the distance to the closest wall
         # (2) using the distance to the closest wall and the orientation of the wall
         #
-        # If you select option 2, you might want to use cascading PID control. 
-  
-        # cmd.angular.z = ???
+        # If you select option 2, you might want to use cascading PID control.
+        self.Kp = 10
+        self.Kd = 10
+        self.Ki = 10
+        term_1 = self.Kp*(msg.linear - self.desired_distance_from_wall)
+
+        cmd.angular.z = term_1
+
 
         pass
    
