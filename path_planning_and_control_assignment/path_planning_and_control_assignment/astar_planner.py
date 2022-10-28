@@ -156,16 +156,20 @@ class AStarPlanner:
             assert (evaluated[s.x, s.y] == 0)
             evaluated[s.x, s.y] = 1
 
+            # If found goal then done.
             if s == dest_state:
                 return self._follow_parent_pointers(parents, s)
 
             # for all free neighboring states
             for ns in self.get_neighboring_states(s):
+                # check if explored
                 if evaluated[ns.x, ns.y] == 1:
                     continue
 
                 transition_distance = sqrt((ns.x - s.x)**2 + (ns.y - s.y)**2)
-                alternative_dist_to_come_to_ns = dist_to_come[s.x, s.y] + transition_distance
+                # Manhattan distance
+                heuristic_distance = abs(ns.x - s.x) + abs(ns.y - s.y)
+                alternative_dist_to_come_to_ns = dist_to_come[s.x, s.y] + transition_distance + heuristic_distance
 
                 # if the state ns has not been visited before or we just found a shorter path
                 # to visit it then update its priority in the queue, and also its
