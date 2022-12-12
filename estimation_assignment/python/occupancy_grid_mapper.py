@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import rospy
 import tf
 import tf.transformations as tr
@@ -117,7 +117,6 @@ class HuskyMapper:
     def odometry_callback(self, msg):
         self.mutex.acquire()
         self.odometry = msg
-
         # Adds noise to the odometry position measurement according to the standard deviations specified as parameters in the launch file
         # We should have used noisy measurements from the Gazebo simulator, but it is more complicated to configure
         # so, we add random noise here ourselves, assuming perfect odometry from the simulator. 
@@ -133,7 +132,11 @@ class HuskyMapper:
         #       and map, which is where odometry messages are expressed in. In fact, odometry 
         #       messages from the Husky are transformations from husky_1/base_link to map 
         # 
-        #self.q_map_baselink = np.array([x, y, z, w])
+        x = self.odometry.pose.pose.position.x
+        y = self.odometry.pose.pose.position.y
+        z = self.odometry.pose.pose.position.z
+        w = self.odometry.pose.pose.orientation.w
+        self.q_map_baselink = np.array([x, y, z, w])
 
         
         # Corrupting the quaternion with noise in yaw, because we have configured the simulator
@@ -152,14 +155,14 @@ class HuskyMapper:
         #       coordinates based on the current odometry message
         #
         #
-        #self.p_map_baselink = np.array([x, y, z])
+        self.p_map_baselink = np.array([x, y, z])
 
 
         #
         # TODO: populate the quaternion from the frame husky_1/base_laser to the map frame 
         #       note: you have access to the static quaternion from husky_1/base_laser to 
         #       husky_1/base_link   
-        #self.q_map_baselaser = tr.quaternion_multiply(? , ?)
+        self.q_map_baselaser = tr.quaternion_multiply(self.q_map_baselink, self.q_baselink_baselaser)
 
         #
         # TODO: populate the rotation matrix from the frame husky_1/base_laser to the map frame 
@@ -168,8 +171,10 @@ class HuskyMapper:
         #       also note: np.dot(A,B) multiplies numpy matrices A and B, whereas A*B is element-wise 
         #       multiplication, which is not usually what you want
         #
-        #self.R_map_baselaser = ?
-
+        # print(f"{self.R_map_baselink.shape=}")
+        # print(f"{self.R_baselink_baselaser.shape=}")
+        self.R_map_baselaser = np.dot(self.R_map_baselink, self.R_baselink_baselaser)
+        # print(f"{self.R_map_baselaser.shape=}")
 
         #
         # TODO: populate the origin of the frame husky_1/base_laser in coordinates of the map frame 
@@ -179,7 +184,9 @@ class HuskyMapper:
         #       also note: np.dot(A,B) multiplies numpy matrices A and B, whereas A*B is element-wise 
         #       multiplication, which is not usually what you want
         #
-        #self.p_map_baselaser = ?
+        # print(f"{self.p_baselink_baselaser.shape=}")
+        # print(f"{self.R_baselink_baselaser.shape=}")
+        self.p_map_baselaser = np.dot(self.p_map_baselink, self.R_baselink_baselaser) + np.dot(self.R_map_baselink, self.p_baselink_baselaser)
         
         self.mutex.release()
 
@@ -204,8 +211,16 @@ class HuskyMapper:
         # 4) self.max_laser_range and self.max_laser_angle specify some of the limits of the laser sensor
         #
         # TODO: fill this
-        #
-        return False  
+        robot_row_meter = self.ogm.meters_per_cell * robot_row
+        robot_col_meter = self.ogm.meters_per_cell * robot_col
+        row_meter = self.ogm.meters_per_cell * row
+        col_meter = self.ogm.meters_per_cell * col
+        cell_theta = atan2(col_meter, row_meter)
+        angle_diff = atan2(sin(robot_theta - cell_theta), cos(robot_theta - cell_theta))
+        if (sqrt(angle_diff**2) <= self.max_laser_angle) and sqrt((robot_row_meter-row_meter)**2 + (robot_col_meter - col_meter)**2) <= self.max_laser_range:
+            return True
+        else:
+            return False  
 
 
     def inverse_measurement_model(self, row, col, robot_row, robot_col, robot_theta_in_map, beam_ranges, beam_angles):
@@ -219,6 +234,13 @@ class HuskyMapper:
         #
         #r = ?
         #diff_angle = ?
+        robot_row_meter = self.ogm.meters_per_cell * robot_row
+        robot_col_meter = self.ogm.meters_per_cell * robot_col
+        row_meter = self.ogm.meters_per_cell * row
+        col_meter = self.ogm.meters_per_cell * col
+        cell_theta = atan2(col_meter, row_meter)
+        diff_angle = atan2(sin(robot_theta_in_map - cell_theta), cos(robot_theta_in_map - cell_theta))
+        r = sqrt((robot_row_meter - row_meter)**2 + (robot_col_meter - col_meter)**2)
         
         closest_beam_angle, closest_beam_idx = min((val, idx) for (idx, val) in enumerate([ abs(diff_angle - ba) for ba in beam_angles ]))
         r_cb = beam_ranges[closest_beam_idx]
@@ -252,7 +274,7 @@ class HuskyMapper:
         N = len(msg.ranges)
         
         ranges_in_baselaser_frame = msg.ranges
-        angles_in_baselaser_frame = [(msg.angle_max - msg.angle_min)*float(i)/N + msg.angle_min for i in xrange(len(msg.ranges))]
+        angles_in_baselaser_frame = [(msg.angle_max - msg.angle_min)*float(i)/N + msg.angle_min for i in range(len(msg.ranges))]
         angles_in_baselink_frame = angles_in_baselaser_frame[::-1]
         # This is because the z-axis of husky_1/base_laser is pointing downwards, while for husky_1/base_link and the map frame
         # the z-axis points upwards
@@ -284,8 +306,8 @@ class HuskyMapper:
         # This is the main loop in occupancy grid mapping
         #
         max_laser_range_in_cells = int(self.max_laser_range / self.ogm.meters_per_cell) + 1 
-        for delta_row in xrange(-max_laser_range_in_cells, max_laser_range_in_cells):
-            for delta_col in xrange(-max_laser_range_in_cells, max_laser_range_in_cells):
+        for delta_row in range(-max_laser_range_in_cells, max_laser_range_in_cells):
+            for delta_col in range(-max_laser_range_in_cells, max_laser_range_in_cells):
                 row = baselaser_row + delta_row
                 col = baselaser_col + delta_col
 

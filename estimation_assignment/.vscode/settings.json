@@ -1,0 +1,10 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/student/lostanl2/csc477_ws/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/student/lostanl2/csc477_ws/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ]
+}

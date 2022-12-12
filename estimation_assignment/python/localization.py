@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+from tkinter import Y
 import rospy
 import tf
 import tf.transformations as tr
@@ -73,12 +74,14 @@ class Observation(object):
     
 def dynamics_model(state, control, dt):
     # TODO: fill this
-    #expected_state = State(?, ?)
+    x = state.x + control.vx * dt
+    y = state.y + control.vy * dt
+    expected_state = State(x, y)
     return expected_state
 
 def measurement_model(state, landmark):
     # TODO: fill this
-    #expected_observation = Observation(?, ?)
+    expected_observation = Observation(landmark.id, sqrt((state.x - landmark.x)**2 + (state.y - landmark.y)**2))
     return expected_observation
     
     
@@ -99,13 +102,15 @@ class LocalizationWithRangeMeasurements(object):
         self.landmarks = landmarks
         self.num_timesteps = num_timesteps
         self.dt = dt
-        self.dynamics_noise_std_dev = dynamics_model_std_dev
+        self.dynamics_noise_std_dev = dynamics_noise_std_dev
         self.obs_noise_std_dev = obs_noise_std_dev
         
     def dynamics_cost(self, state_curr, state_prev, control_prev):
         #TODO: evaluate the dynamics model and return the difference between
         #the current state and expected state as predicted from the dynamics 
         # I.e. returns a vector 
+        dynamics_prev = dynamics_model(state_prev, control_prev, self.dt)
+        diff = dynamics_prev.diff(state_curr)
         return diff
 
     
@@ -114,34 +119,56 @@ class LocalizationWithRangeMeasurements(object):
         # between the given observation and the one predicted by the
         # measurement model
         # I.e. returns a vector
+        measurement_given = measurement_model(state, landmark)
+        diff = measurement_given.diff(observation)
         return diff
 
     
     def cost_function(self, x):
-
+        print(f"{x=}")
         # TODO: Extend the vector F, so that it contains all the residuals
         # that you are going to use as errors in your least squares formulation
         # Note: F = np.concatenate((F, another_vector)) is the way to extend it
         F = np.array([])
         
         T = self.num_timesteps
-
+        print(T)
 
         # TODO: Extend F by the deviation of the estimated first state (x[0], x[1])
         # from the given first state self.init_state
-        # deviation_from_init_state = ?
+        curr_state = State(x[0], x[1])
+        deviation_from_init_state = self.init_state.diff(curr_state)
+        print(f"{deviation_from_init_state=}")
         F = np.concatenate((F, deviation_from_init_state))
 
-        
-        for t in xrange(1, T):
+        state_prev = State(x[0], x[1])
+        for t in range(1, T):
+            timesteps = t*2
+            curr_state = State(x[timesteps], x[timesteps+1])
             #TODO: Extend F by the dynamical model error from one estimated state to the next
-            #      as defined by the current vector x 
+            #      as defined by the current vector x
+            control_prev = self.controls_across_time[t-1]
+            dc = self.dynamics_cost(curr_state, state_prev, control_prev)
+            state_prev: State = State(x[timesteps], x[timesteps+1])
+            print(f"{dc=}")
             F = np.concatenate((F, dc))
         
-        for t in xrange(self.num_timesteps):
+        for t in range(self.num_timesteps):
             #TODO: Extend F by the observation model error of the observations made at time t
-            #      in estimated state at time t, as currently defined by vector x  
-            
+            #      in estimated state at time t, as currently defined by vector x
+            timesteps = t*2
+            curr_state = State(x[timesteps], x[timesteps+1])
+            obs_0 = self.observations_across_time[t][0]
+            obs_1 = self.observations_across_time[t][1]
+            landmark_0 = self.landmarks[obs_0.landmark_id]
+            landmark_1 = self.landmarks[obs_1.landmark_id]
+            dobs_0 = self.measurement_cost(curr_state, landmark=landmark_0, observation=obs_0) 
+            dobs_1 = self.measurement_cost(curr_state, landmark_1, obs_1)
+            dobs = np.concatenate((dobs_0, dobs_1))
+            print(f"{dobs=}") 
+            F = np.concatenate((F, dobs))
+        
+        print(f"{F=}")
         return F
         
     def localize(self):
@@ -151,7 +178,7 @@ class LocalizationWithRangeMeasurements(object):
         res = least_squares(self.cost_function, x_init)
         
         resulting_state_estimates_across_time = T * [ 0 ]
-        for t in xrange(T):
+        for t in range(T):
             resulting_state_estimates_across_time[t] = State(res.x[State.dim*t], res.x[State.dim*t+1])
             
         return resulting_state_estimates_across_time
@@ -193,7 +220,7 @@ if __name__ == "__main__":
 
     # These controls make the system move and visit num_timesteps States
     states = [State(0,0)]
-    for t in xrange(1, num_timesteps):
+    for t in range(1, num_timesteps):
         next_state = dynamics_model(states[t-1], controls[t-1], dt)
         next_state.add_noise(np.random.multivariate_normal(dynamics_noise_mean, dynamics_noise_covariance))
         states.append(next_state)
@@ -221,7 +248,7 @@ if __name__ == "__main__":
 
     # Creates observation objects according to the indexes specified above
     observations_across_time = num_timesteps * [ 0 ]
-    for t in xrange(num_timesteps):
+    for t in range(num_timesteps):
         observations_across_time[t] = []
         for i in observation_indexes_across_time[t]:
             z_t_i = measurement_model(states[t], landmarks[i])
@@ -240,9 +267,9 @@ if __name__ == "__main__":
     
     resulting_states = solver.localize()
 
-    print "Norm of difference between estimated states and true states"
-    for t in xrange(num_timesteps):
-        print np.linalg.norm(resulting_states[t].diff(states[t]))
+    print("Norm of difference between estimated states and true states")
+    for t in range(num_timesteps):
+        print(np.linalg.norm(resulting_states[t].diff(states[t])))
         
     true_rx = [r.x for r in states]
     true_ry = [r.y for r in states]
@@ -254,7 +281,7 @@ if __name__ == "__main__":
     
     
     import matplotlib
-    matplotlib.use('Qt4Agg')
+    matplotlib.use('Qt5Agg')
     import matplotlib.pyplot as plt
 
     
@@ -272,7 +299,7 @@ if __name__ == "__main__":
                      bbox=dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.5),
                      arrowprops=dict(arrowstyle = '->', connectionstyle='arc3,rad=0'))
 
-    for t in xrange(num_timesteps):
+    for t in range(num_timesteps):
         for obs in observations_across_time[t]:
             l = landmarks[obs.landmark_id]
             plt.plot([l.x, states[t].x], [l.y, states[t].y], 'k--', alpha=0.3)
